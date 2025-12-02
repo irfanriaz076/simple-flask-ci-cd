@@ -2,16 +2,13 @@ pipeline {
     agent any
 
     environment {
-        // Docker image tag will include Jenkins build number
         APP_IMAGE = "simple-flask-app:${env.BUILD_NUMBER}"
-        // URL where the app is reachable from the Jenkins agent
         APP_URL = "http://localhost:5000"
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Adjust branch and repo URL if you use 'main' instead of 'master'
                 git branch: 'master', url: 'https://github.com/irfanriaz076/simple-flask-ci-cd.git'
             }
         }
@@ -20,7 +17,6 @@ pipeline {
             steps {
                 sh '''
                     cd app
-                    # Install dependencies on Jenkins node
                     pip3 install -r requirements.txt --break-system-packages
                     flake8 .
                 '''
@@ -30,7 +26,6 @@ pipeline {
         stage('Code Build') {
             steps {
                 sh '''
-                    # Build Docker image for the app
                     docker build -t ${APP_IMAGE} .
                 '''
             }
@@ -39,8 +34,10 @@ pipeline {
         stage('Unit Testing') {
             steps {
                 sh '''
-                    cd app
-                    pytest ../tests/test_unit.py
+                    # Ensure the workspace root (which contains the "app" package) is on PYTHONPATH
+                    export PYTHONPATH="${WORKSPACE}"
+                    cd ${WORKSPACE}
+                    pytest tests/test_unit.py
                 '''
             }
         }
@@ -48,12 +45,8 @@ pipeline {
         stage('Containerized Deployment') {
             steps {
                 sh '''
-                    # Stop old container if it exists
                     docker rm -f simple-flask-container || true
-
-                    # Run new container from the built image
                     docker run -d --name simple-flask-container -p 5000:5000 ${APP_IMAGE}
-
                     echo "Waiting for app to start..."
                     sleep 10
                 '''
@@ -63,10 +56,10 @@ pipeline {
         stage('Selenium Testing') {
             steps {
                 sh '''
-                    # APP_URL is set in environment; Selenium uses it
+                    export PYTHONPATH="${WORKSPACE}"
                     export APP_URL=${APP_URL}
-                    cd app
-                    pytest ../tests/test_selenium.py
+                    cd ${WORKSPACE}
+                    pytest tests/test_selenium.py
                 '''
             }
         }
@@ -75,7 +68,6 @@ pipeline {
     post {
         always {
             sh '''
-                # Clean up container after pipeline
                 docker rm -f simple-flask-container || true
             '''
         }
